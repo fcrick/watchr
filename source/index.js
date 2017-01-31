@@ -509,7 +509,9 @@ class Watcher extends EventEmitter {
 
 			// Otherwise it is the same, and nothing is needed to be done
 			else {
-				tasks.clearRemaining()
+				if (method === 'dirScan') {
+					tasks.clearRemaining()
+				}
 				return complete()
 			}
 		})
@@ -525,9 +527,19 @@ class Watcher extends EventEmitter {
 
 			// So let's check if we are a directory
 			if ( currentStat.isDirectory() === false ) {
-				// If we are a file, lets simply emit the change event
-				this.log('debug', `watch emit update: ${this.path}`)
-				this.emit('change', 'update', this.path, currentStat, previousStat)
+
+				// special behavior that checks all files for mtime changes
+				if (method === 'dirScan') {
+					// the event is fake so don't fire unless the mtime is actually different
+					if ( currentStat.mtime.toString() !== previousStat.mtime.toString() ) {
+						this.log('debug', `watch emit update: ${this.path}`)
+						this.emit('change', 'update', this.path, currentStat, previousStat)
+					}
+				} else {
+					// If we are a file, lets simply emit the change event
+					this.log('debug', `watch emit update: ${this.path}`)
+					this.emit('change', 'update', this.path, currentStat, previousStat)
+				}
 				return done()
 			}
 
@@ -544,7 +556,11 @@ class Watcher extends EventEmitter {
 				// Find deleted files
 				eachr(this.children, (child, childFileRelativePath) => {
 					// Skip if the file still exists
-					if ( newFileRelativePaths.indexOf(childFileRelativePath) !== -1 )  return
+					if ( newFileRelativePaths.indexOf(childFileRelativePath) !== -1 ) {
+						// trigger a directory scan looking for changed modified times
+						child.watcher.listener({method: 'dirScan'}, next)
+						return
+					}
 
 					// Fetch full path
 					const childFileFullPath = pathUtil.join(this.path, childFileRelativePath)
